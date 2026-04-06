@@ -32,10 +32,13 @@ const Navigation = () => {
               <Link to="/analyzer" className="text-sm font-semibold text-white hover:text-[#FF0000] transition-colors" data-testid="nav-analyzer">
                 Analyzer
               </Link>
+              <Link to="/pricing" className="text-sm font-semibold text-white hover:text-[#FF0000] transition-colors" data-testid="nav-pricing">
+                Pricing
+              </Link>
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 px-3 py-1 bg-[#141414] border border-[#262626] rounded-full">
                   <User className="w-4 h-4 text-[#FF0000]" />
-                  <span className="text-xs font-semibold">FREE</span>
+                  <span className="text-xs font-semibold">{user.subscription_tier ? user.subscription_tier.toUpperCase() : 'FREE'}</span>
                 </div>
                 <Button
                   onClick={handleSignout}
@@ -50,6 +53,9 @@ const Navigation = () => {
             </>
           ) : (
             <>
+              <Link to="/pricing" className="text-sm font-semibold text-white hover:text-[#FF0000] transition-colors" data-testid="nav-pricing-guest">
+                Pricing
+              </Link>
               <Link to="/signin" data-testid="nav-signin">
                 <Button variant="ghost" className="text-white hover:text-[#FF0000]">
                   Sign In

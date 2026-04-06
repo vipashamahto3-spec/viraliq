@@ -9,6 +9,8 @@ import Signup from './pages/Signup';
 import Signin from './pages/Signin';
 import Generator from './pages/Generator';
 import Analyzer from './pages/Analyzer';
+import Pricing from './pages/Pricing';
+import PaymentSuccess from './pages/PaymentSuccess';
 import AdminTesting from './pages/AdminTesting';
 import '@/App.css';
 
@@ -23,6 +25,7 @@ function App() {
             <Route path="/" element={<Landing />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/signin" element={<Signin />} />
+            <Route path="/pricing" element={<Pricing />} />
             <Route path="/admin-testing" element={<AdminTesting />} />
             <Route
               path="/generator"
@@ -37,6 +40,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Analyzer />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/payment-success"
+              element={
+                <ProtectedRoute>
+                  <PaymentSuccess />
                 </ProtectedRoute>
               }
             />

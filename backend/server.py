@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 import bcrypt
 import jwt
 from emergentintegrations.llm.chat import LlmChat, UserMessage
+from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest, CheckoutSessionResponse, CheckoutStatusResponse
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -24,6 +25,7 @@ db = client[os.environ['DB_NAME']]
 
 # Env variables
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
+STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY')
 JWT_SECRET = os.environ.get('JWT_SECRET')
 
 # Create the main app
@@ -50,6 +52,7 @@ class User(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     email: EmailStr
     full_name: Optional[str] = None
+    subscription_tier: str = "free"  # free, pro, agency
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class SignupRequest(BaseModel):
@@ -97,6 +100,16 @@ class VideoAnalysisResponse(BaseModel):
     reasons: List[Dict[str, str]]
     improved_title: str
     better_thumbnail: str
+
+class PaymentTransaction(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    session_id: str
+    amount: float
+    plan: str
+    payment_status: str = "initiated"
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 # ============ AUTH HELPERS ============
 
@@ -146,6 +159,12 @@ async def signup(request: SignupRequest):
     
     await db.users.insert_one(user_dict)
     
+    # Initialize usage limits
+    usage = UsageLimit(user_id=user.id)
+    usage_dict = usage.model_dump()
+    usage_dict['week_start'] = usage_dict['week_start'].isoformat()
+    await db.usage_limits.insert_one(usage_dict)
+    
     token = create_access_token(user.id, user.email)
     return AuthResponse(access_token=token, user=user)
 
@@ -169,10 +188,71 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 async def signout(current_user: dict = Depends(get_current_user)):
     return {"message": "Signed out successfully"}
 
+# ============ USAGE LIMIT HELPERS ============
+
+async def check_and_update_usage(user_id: str, operation: str) -> bool:
+    usage = await db.usage_limits.find_one({"user_id": user_id}, {"_id": 0})
+    if not usage:
+        usage = UsageLimit(user_id=user_id).model_dump()
+        usage['week_start'] = usage['week_start'].isoformat()
+        await db.usage_limits.insert_one(usage)
+        usage = await db.usage_limits.find_one({"user_id": user_id}, {"_id": 0})
+    
+    week_start = datetime.fromisoformat(usage['week_start'])
+    now = datetime.now(timezone.utc)
+    
+    # Reset weekly limits if new week
+    if (now - week_start).days >= 7:
+        await db.usage_limits.update_one(
+            {"user_id": user_id},
+            {"$set": {
+                "generations_this_week": 0,
+                "analyses_this_week": 0,
+                "week_start": now.isoformat()
+            }}
+        )
+        usage['generations_this_week'] = 0
+        usage['analyses_this_week'] = 0
+    
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    tier = user.get('subscription_tier', 'free')
+    
+    # Check if test mode is enabled for this user
+    test_mode = await db.test_mode.find_one({"enabled": True}, {"_id": 0})
+    if test_mode and user.get('email') == test_mode.get('email'):
+        # Test mode enabled for this email - bypass all restrictions
+        return True
+    
+    # Check limits based on subscription tier
+    if tier == 'free':
+        if operation == 'generation' and usage['generations_this_week'] >= 3:
+            return False
+        if operation == 'analysis' and usage['analyses_this_week'] >= 1:
+            return False
+    # Pro and Agency have unlimited access
+    
+    # Update usage
+    if operation == 'generation':
+        await db.usage_limits.update_one(
+            {"user_id": user_id},
+            {"$inc": {"generations_this_week": 1}}
+        )
+    elif operation == 'analysis':
+        await db.usage_limits.update_one(
+            {"user_id": user_id},
+            {"$inc": {"analyses_this_week": 1}}
+        )
+    
+    return True
+
 # ============ FEATURE ROUTES ============
 
 @api_router.post("/generate-ideas", response_model=GenerateIdeasResponse)
 async def generate_ideas(request: GenerateIdeasRequest, current_user: dict = Depends(get_current_user)):
+    can_use = await check_and_update_usage(current_user['id'], 'generation')
+    if not can_use:
+        raise HTTPException(status_code=403, detail="Weekly generation limit reached. Upgrade to Pro for unlimited access.")
+    
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
         session_id=f"gen_{current_user['id']}_{datetime.now().timestamp()}",
@@ -224,6 +304,10 @@ Format as JSON array with keys: title, hook, thumbnail_concept, viral_score, bes
 
 @api_router.post("/analyze-video", response_model=VideoAnalysisResponse)
 async def analyze_video(request: AnalyzeVideoRequest, current_user: dict = Depends(get_current_user)):
+    can_use = await check_and_update_usage(current_user['id'], 'analysis')
+    if not can_use:
+        raise HTTPException(status_code=403, detail="Weekly analysis limit reached. Upgrade to Pro for unlimited access.")
+    
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
         session_id=f"analysis_{current_user['id']}_{datetime.now().timestamp()}",
@@ -268,6 +352,88 @@ Format as JSON with keys: score, reasons (array of objects with 'reason' and 'fi
     except Exception as e:
         logger.error(f"Error parsing AI analysis: {e}")
         raise HTTPException(status_code=500, detail="Failed to analyze video. Please try again.")
+
+# ============ PAYMENT ROUTES ============
+
+PRICING_PLANS = {
+    "pro": {"amount": 9.0, "name": "Pro"},
+    "agency": {"amount": 29.0, "name": "Agency"}
+}
+
+@api_router.post("/checkout/session", response_model=CheckoutSessionResponse)
+async def create_checkout_session(
+    plan: str,
+    origin_url: str,
+    current_user: dict = Depends(get_current_user)
+):
+    if plan not in PRICING_PLANS:
+        raise HTTPException(status_code=400, detail="Invalid plan")
+    
+    plan_info = PRICING_PLANS[plan]
+    
+    host_url = origin_url.rstrip('/')
+    webhook_url = f"{os.environ.get('REACT_APP_BACKEND_URL', host_url)}/api/webhook/stripe"
+    
+    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+    
+    success_url = f"{host_url}/payment-success?session_id={{{{CHECKOUT_SESSION_ID}}}}"
+    cancel_url = f"{host_url}/pricing"
+    
+    checkout_request = CheckoutSessionRequest(
+        amount=plan_info["amount"],
+        currency="usd",
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata={
+            "user_id": current_user['id'],
+            "plan": plan,
+            "email": current_user['email']
+        }
+    )
+    
+    session = await stripe_checkout.create_checkout_session(checkout_request)
+    
+    # Create payment transaction record
+    transaction = PaymentTransaction(
+        user_id=current_user['id'],
+        session_id=session.session_id,
+        amount=plan_info["amount"],
+        plan=plan,
+        payment_status="initiated"
+    )
+    transaction_dict = transaction.model_dump()
+    transaction_dict['created_at'] = transaction_dict['created_at'].isoformat()
+    await db.payment_transactions.insert_one(transaction_dict)
+    
+    return session
+
+@api_router.get("/checkout/status/{session_id}", response_model=CheckoutStatusResponse)
+async def get_checkout_status(session_id: str, current_user: dict = Depends(get_current_user)):
+    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url="")
+    status = await stripe_checkout.get_checkout_status(session_id)
+    
+    # Update payment transaction if completed
+    if status.payment_status == "paid":
+        transaction = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+        if transaction and transaction['payment_status'] != "completed":
+            # Update user subscription
+            plan = transaction['plan']
+            await db.users.update_one(
+                {"id": current_user['id']},
+                {"$set": {"subscription_tier": plan}}
+            )
+            # Update transaction status
+            await db.payment_transactions.update_one(
+                {"session_id": session_id},
+                {"$set": {"payment_status": "completed"}}
+            )
+    
+    return status
+
+@api_router.post("/webhook/stripe")
+async def stripe_webhook(stripe_signature: str = Header(None)):
+    # Webhook handling for Stripe events
+    return {"status": "received"}
 
 # ============ ADMIN TESTING ============
 
