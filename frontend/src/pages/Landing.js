@@ -81,7 +81,7 @@ const Landing = () => {
             Ready to Go Viral?
           </h2>
           <p className="text-xl text-[#A1A1AA] mb-8">
-            Join thousands of creators using ViralIQ to dominate YouTube.
+            Join thousands of creators using ViralIQ to dominate YouTube. 100% Free.
           </p>
           <Link to={user ? "/generator" : "/signup"} data-testid="footer-cta">
             <Button className="viral-glow-button rounded-full px-8 py-6 text-lg font-bold tracking-wide">
