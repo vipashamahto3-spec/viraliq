@@ -1,34 +1,52 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+.viral-glow-button {
+  position: relative;
+  background: #FF0000;
+  color: white;
+  transition: all 0.3s ease-out;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+.viral-glow-button:hover {
+  background: #CC0000;
+  box-shadow: 0 0 20px rgba(255, 0, 0, 0.4);
+  transform: translateY(-2px);
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+.hero-bg {
+  background-image: url('https://static.prod-images.emergentagent.com/jobs/0d9c9028-9022-4e64-b807-289187ad3aee/images/ce510084ebc12086d18080ddff36b0edadbe7436edaef2aebb82cfffdc9028a8.png');
+  background-size: cover;
+  background-position: center;
 }
 
-.App-link {
-    color: #61dafb;
+.pricing-bg {
+  background-image: url('https://static.prod-images.emergentagent.com/jobs/0d9c9028-9022-4e64-b807-289187ad3aee/images/1ab09ae26b67509c3fc8b8a33801c040b5916979e138b29aa75d26e1c129f57e.png');
+  background-size: cover;
+  background-position: center;
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+.score-circle {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.idea-card {
+  transition: all 0.3s ease-out;
+}
+
+.idea-card:hover {
+  transform: translateY(-4px);
+  border-color: #FF0000;
+}
+
+.glass-nav {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(24px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
