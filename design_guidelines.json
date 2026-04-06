@@ -1,0 +1,138 @@
+{
+  "project_name": "ViralIQ",
+  "theme": "dark",
+  "archetype": "Performance Pro (Adapted for Creator SaaS)",
+  "emotional_tone": "High-energy, authoritative, clear, kinetic, viral-focused",
+  "colors": {
+    "background": {
+      "default": "#0A0A0A",
+      "paper": "#141414",
+      "surface": "#1A1A1A"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A1A1AA",
+      "muted": "#71717A"
+    },
+    "brand": {
+      "primary": "#FF0000",
+      "primary_hover": "#CC0000",
+      "accent": "#FF3B30",
+      "glow": "rgba(255, 0, 0, 0.5)"
+    },
+    "feedback": {
+      "success": "#10B981",
+      "warning": "#F59E0B",
+      "error": "#EF4444",
+      "info": "#3B82F6"
+    },
+    "border": {
+      "default": "#262626",
+      "focus": "#FF0000"
+    }
+  },
+  "typography": {
+    "fonts": {
+      "headings": "'Outfit', sans-serif",
+      "body": "'Manrope', sans-serif",
+      "mono": "'JetBrains Mono', monospace"
+    },
+    "scales": {
+      "h1": "text-5xl md:text-6xl font-black tracking-tighter leading-none",
+      "h2": "text-3xl md:text-4xl font-bold tracking-tight leading-tight",
+      "h3": "text-2xl md:text-3xl font-semibold tracking-tight",
+      "h4": "text-xl font-medium",
+      "body_large": "text-lg leading-relaxed",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm tracking-wide uppercase font-semibold",
+      "tiny": "text-xs uppercase tracking-[0.2em]"
+    }
+  },
+  "spacing_and_layout": {
+    "generous_spacing": "Use p-8, p-12, or p-16 for main sections. Internal container padding should be p-6 or p-8 minimum to prevent text collision.",
+    "landing_page_grid": "Mode A (Tetris Grid). Asymmetrical layout, wide gaps (gap-8 to gap-12). Use span logic (col-span-8, col-span-4) to create tension.",
+    "dashboard_grid": "Mode B (Control Room Grid). For Analyzer and Generator pages. gap-4 or gap-6. Dense data, high scannability. Widget ratios like col-span-1 for summary, col-span-2 for charts.",
+    "container_radius": "rounded-xl for cards, rounded-full for pills and main buttons. Keep radius subtle to maintain the 'Performance' edge."
+  },
+  "surfaces": {
+    "cards": "Flat background (#141414) with 1px solid border (#262626), no drop shadow by default. On hover: border brightens slightly or casts a subtle red glow (-translate-y-1 transition).",
+    "glassmorphism": "Only for Sticky Nav/Headers. bg-black/60 with backdrop-blur-xl and border-b border-white/10.",
+    "pricing_highlight": "The Pro tier MUST use 'The Tracing Beam' or a glowing gradient border with #FF0000 to highlight it."
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#FF0000] text-white font-bold tracking-wide rounded-full px-8 py-3 transition-all hover:bg-[#CC0000] hover:shadow-[0_0_20px_rgba(255,0,0,0.4)]",
+      "secondary": "bg-transparent text-white border border-[#262626] font-bold tracking-wide rounded-full px-8 py-3 transition-all hover:border-[#FF0000] hover:text-[#FF0000]"
+    },
+    "inputs": {
+      "default": "bg-[#0F0F0F] border border-[#262626] text-white rounded-lg p-3 focus:border-[#FF0000] focus:ring-1 focus:ring-[#FF0000] transition-colors"
+    },
+    "badges": "bg-[#FF0000]/10 text-[#FF0000] border border-[#FF0000]/20 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider"
+  },
+  "motion_and_interactions": {
+    "hover": "Always set hover text color (e.g., hover:text-white). Buttons MUST have a kinetic feel.",
+    "entrance": "Staggered fade-up animations for generated viral ideas and analyzer results (Framer Motion).",
+    "transitions": "transition-all duration-300 ease-out"
+  },
+  "media": {
+    "hero_background": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/0d9c9028-9022-4e64-b807-289187ad3aee/images/ce510084ebc12086d18080ddff36b0edadbe7436edaef2aebb82cfffdc9028a8.png",
+      "description": "Abstract dark cinematic background with subtle neon red geometric lines for the main landing page hero section.",
+      "usage": "Landing page hero section background layer, with opacity overlay bg-black/50 so text remains legible."
+    },
+    "pricing_texture": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/0d9c9028-9022-4e64-b807-289187ad3aee/images/1ab09ae26b67509c3fc8b8a33801c040b5916979e138b29aa75d26e1c129f57e.png",
+      "description": "Dark mode UI background texture with subtle red glowing light bleed.",
+      "usage": "Background layer for the Pricing page."
+    },
+    "analyzer_feature": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/0d9c9028-9022-4e64-b807-289187ad3aee/images/775a123489d083a5d330cd41470340e21572c5f38bbdf261685fa503a7cb494f.png",
+      "description": "Cinematic close-up of a high-end YouTube creator studio in a dark room with red glow.",
+      "usage": "Feature showcase image for the 'Video Failure Analyzer' section on the landing page."
+    }
+  },
+  "icons": {
+    "library": "lucide-react",
+    "usage": "Use crisp, stroke-based icons. Use Lucide React (already installed)."
+  },
+  "pages_and_features": {
+    "landing_page": {
+      "headline": "Stop Guessing. Start Going Viral.",
+      "design_instructions": "Hero section must use the hero_background image with a dark overlay. Centralize the massive headline (text-6xl+). Emphasize the CTA 'Start Generating Ideas' in primary red."
+    },
+    "viral_idea_generator": {
+      "inputs": "Niche (text), Target Audience (text), Language (Dropdown: English, Hindi, Spanish, French, Portuguese, Arabic).",
+      "outputs": "Grid of 10 Idea Cards. Each card includes: Title, Hook (15-sec), Thumbnail Concept (text/visual representation), Viral Score (/10) prominently displayed, Best Upload Time.",
+      "design_instructions": "Use Mode B Control Room Grid. Cards must feel tactile. Highlight the 'Viral Score' using the red accent color or glowing text."
+    },
+    "video_failure_analyzer": {
+      "inputs": "YouTube Video URL.",
+      "outputs": "Score / 100 (prominent circular progress or large stat), 3-5 reasons for underperformance with actionable fixes, Improved Title suggestion, Better Thumbnail concept.",
+      "design_instructions": "Use a Dashboard layout. The score out of 100 should be the visual anchor. Underperformance reasons should be displayed as a list of actionable insights with error/warning colors."
+    },
+    "pricing_page": {
+      "plans": [
+        {"name": "Free", "price": "$0", "features": ["3 generations/week", "1 analysis/week"]},
+        {"name": "Pro", "price": "$9/month", "features": ["Unlimited generations", "Unlimited analysis", "Priority support"]},
+        {"name": "Agency", "price": "$29/month", "features": ["Everything in Pro", "API Access", "Multiple accounts"]}
+      ],
+      "design_instructions": "Use pricing_texture as background. 3-column bento grid. The 'Pro' tier MUST stand out with a 1px solid red border and a subtle red drop shadow (glow). Use the 'Most Popular' badge on Pro."
+    },
+    "auth": {
+      "design_instructions": "Minimalist Login and Signup pages. Centered form, deep black background, red primary button."
+    }
+  },
+  "testing_attributes": {
+    "rule": "All interactive and key informational elements MUST include a `data-testid` attribute (e.g., `data-testid=\"generate-ideas-button\"`)."
+  },
+  "instructions_to_main_agent": [
+    "Install `@phosphor-icons/react` if complex icons are needed, otherwise stick to `lucide-react`.",
+    "Use pure HTML + Tailwind for the marketing landing page structure. DO NOT use generic Shadcn layout components for the marketing page. Build custom, asymmetrical grids.",
+    "Use Shadcn UI for the forms, inputs, dropdowns, and dashboards (Generator and Analyzer output). Heavily customize Shadcn borders and backgrounds to match the #141414 / #262626 dark theme.",
+    "Ensure 'Inter' is NOT used for headings. Use 'Outfit'.",
+    "Integrate Supabase for auth and Stripe for payments as requested.",
+    "Implement the free limits (3 generations/week, 1 analysis/week) tracking in Supabase.",
+    "Do NOT use pure #000000 background everywhere, use #0A0A0A (Obsidian) for depth.",
+    "Adhere strictly to WCAG AA contrast ratios, especially for text placed on dark red."
+  ]
+}
