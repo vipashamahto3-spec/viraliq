@@ -219,6 +219,35 @@ class ViralIQAPITester:
         self.log_test("Usage Limit Enforcement", True)
         return True
 
+    def test_get_usage(self):
+        """Test GET /api/usage endpoint"""
+        success, response = self.run_test("Get Usage Data", "GET", "usage", 200)
+        
+        if success:
+            # Verify usage structure
+            required_fields = ['generations_this_week', 'analyses_this_week', 'tier', 'generation_limit', 'analysis_limit']
+            for field in required_fields:
+                if field not in response:
+                    self.log_test("Usage Structure Validation", False, f"Missing field: {field}")
+                    return False
+            self.log_test("Usage Structure Validation", True)
+            return True
+        return False
+
+    def test_cancel_subscription(self):
+        """Test subscription cancellation"""
+        # First try to cancel without being on a paid plan (should fail)
+        test_data = {"confirm": True}
+        success, response = self.run_test("Cancel Subscription (Free User)", "POST", "subscription/cancel", 400, test_data)
+        
+        if success:
+            return True
+        return False
+
+    def test_email_notifications(self):
+        """Test email notifications endpoint"""
+        return self.run_test("Get Email Notifications", "GET", "notifications", 200)
+
     def test_signout(self):
         """Test user signout"""
         return self.run_test("User Signout", "POST", "auth/signout", 200)
@@ -234,10 +263,13 @@ class ViralIQAPITester:
             ("API Root", self.test_root_endpoint),
             ("User Signup", self.test_signup),
             ("Get Current User", self.test_get_me),
+            ("Get Usage Data", self.test_get_usage),
             ("Generate Ideas", self.test_generate_ideas),
             ("Analyze Video", self.test_analyze_video),
             ("Create Checkout", self.test_checkout_session),
             ("Checkout Status", self.test_checkout_status),
+            ("Cancel Subscription", self.test_cancel_subscription),
+            ("Email Notifications", self.test_email_notifications),
             ("User Signout", self.test_signout),
             ("Demo User Signin", self.test_signin),
             ("Usage Limits", self.test_usage_limits),

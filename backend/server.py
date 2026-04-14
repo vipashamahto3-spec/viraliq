@@ -5,13 +5,16 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import asyncio
 from pathlib import Path
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from typing import List, Optional, Dict
 import uuid
+import json
 from datetime import datetime, timezone, timedelta
 import bcrypt
 import jwt
+import resend
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest, CheckoutSessionResponse, CheckoutStatusResponse
 
@@ -27,6 +30,12 @@ db = client[os.environ['DB_NAME']]
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
 STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY')
 JWT_SECRET = os.environ.get('JWT_SECRET')
+RESEND_API_KEY = os.environ.get('RESEND_API_KEY')
+SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'onboarding@resend.dev')
+
+# Configure Resend
+if RESEND_API_KEY:
+    resend.api_key = RESEND_API_KEY
 
 # Create the main app
 app = FastAPI(title="ViralIQ API")
@@ -85,7 +94,7 @@ class VideoIdea(BaseModel):
     title: str
     hook: str
     thumbnail_concept: str
-    viral_score: int
+    viral_score: float
     best_upload_day: str
     best_upload_time: str
 
@@ -110,6 +119,116 @@ class PaymentTransaction(BaseModel):
     plan: str
     payment_status: str = "initiated"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class CancelSubscriptionRequest(BaseModel):
+    confirm: bool = True
+
+# ============ EMAIL HELPER ============
+
+async def send_email_notification(to_email: str, subject: str, html_content: str):
+    """Send email via Resend. Falls back to logging if no API key."""
+    if not RESEND_API_KEY:
+        logger.info(f"[EMAIL LOG] To: {to_email} | Subject: {subject}")
+        # Store in DB as notification record
+        await db.email_notifications.insert_one({
+            "to": to_email,
+            "subject": subject,
+            "html": html_content,
+            "status": "logged_only",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        return {"status": "logged", "message": "No RESEND_API_KEY configured, email logged only"}
+    
+    params = {
+        "from": SENDER_EMAIL,
+        "to": [to_email],
+        "subject": subject,
+        "html": html_content
+    }
+    try:
+        email = await asyncio.to_thread(resend.Emails.send, params)
+        await db.email_notifications.insert_one({
+            "to": to_email,
+            "subject": subject,
+            "status": "sent",
+            "email_id": email.get("id"),
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        logger.info(f"Email sent to {to_email}: {subject}")
+        return {"status": "sent", "email_id": email.get("id")}
+    except Exception as e:
+        logger.error(f"Failed to send email to {to_email}: {str(e)}")
+        await db.email_notifications.insert_one({
+            "to": to_email,
+            "subject": subject,
+            "status": "failed",
+            "error": str(e),
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        return {"status": "failed", "error": str(e)}
+
+def build_payment_success_email(user_name: str, plan: str, amount: float) -> str:
+    return f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0A0A0A; color: #FFFFFF; padding: 40px; border-radius: 12px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="color: #FF0000; font-size: 28px; margin: 0;">ViralIQ</h1>
+        </div>
+        <h2 style="color: #FFFFFF; font-size: 22px; text-align: center;">Payment Successful!</h2>
+        <p style="color: #A1A1AA; text-align: center; font-size: 16px;">Hey {user_name or 'Creator'},</p>
+        <div style="background: #141414; border: 1px solid #262626; border-radius: 8px; padding: 24px; margin: 20px 0;">
+            <p style="color: #A1A1AA; margin: 8px 0;">Plan: <strong style="color: #FFFFFF;">{plan.title()} Plan</strong></p>
+            <p style="color: #A1A1AA; margin: 8px 0;">Amount: <strong style="color: #FFFFFF;">${amount}/month</strong></p>
+            <p style="color: #A1A1AA; margin: 8px 0;">Status: <strong style="color: #10B981;">Active</strong></p>
+        </div>
+        <p style="color: #A1A1AA; text-align: center;">You now have unlimited access to all ViralIQ features. Go create some viral content!</p>
+        <div style="text-align: center; margin-top: 30px;">
+            <p style="color: #71717A; font-size: 12px;">ViralIQ - AI-Powered YouTube Growth</p>
+        </div>
+    </div>
+    """
+
+def build_cancellation_email(user_name: str, plan: str) -> str:
+    return f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0A0A0A; color: #FFFFFF; padding: 40px; border-radius: 12px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="color: #FF0000; font-size: 28px; margin: 0;">ViralIQ</h1>
+        </div>
+        <h2 style="color: #FFFFFF; font-size: 22px; text-align: center;">Subscription Cancelled</h2>
+        <p style="color: #A1A1AA; text-align: center; font-size: 16px;">Hey {user_name or 'Creator'},</p>
+        <div style="background: #141414; border: 1px solid #262626; border-radius: 8px; padding: 24px; margin: 20px 0;">
+            <p style="color: #A1A1AA; margin: 8px 0;">Previous Plan: <strong style="color: #FFFFFF;">{plan.title()}</strong></p>
+            <p style="color: #A1A1AA; margin: 8px 0;">Current Plan: <strong style="color: #FFFFFF;">Free</strong></p>
+            <p style="color: #A1A1AA; margin: 8px 0;">Status: <strong style="color: #F59E0B;">Downgraded</strong></p>
+        </div>
+        <p style="color: #A1A1AA; text-align: center;">Your subscription has been cancelled and you've been moved to the Free plan. You can upgrade again anytime.</p>
+        <p style="color: #A1A1AA; text-align: center; font-size: 14px;">Free plan includes: 3 generations/week, 1 analysis/week</p>
+        <div style="text-align: center; margin-top: 30px;">
+            <p style="color: #71717A; font-size: 12px;">ViralIQ - AI-Powered YouTube Growth</p>
+        </div>
+    </div>
+    """
+
+def build_welcome_email(user_name: str) -> str:
+    return f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #0A0A0A; color: #FFFFFF; padding: 40px; border-radius: 12px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="color: #FF0000; font-size: 28px; margin: 0;">ViralIQ</h1>
+        </div>
+        <h2 style="color: #FFFFFF; font-size: 22px; text-align: center;">Welcome to ViralIQ!</h2>
+        <p style="color: #A1A1AA; text-align: center; font-size: 16px;">Hey {user_name or 'Creator'},</p>
+        <p style="color: #A1A1AA; text-align: center;">Your account is ready. Start generating viral video ideas and analyzing your content today.</p>
+        <div style="background: #141414; border: 1px solid #262626; border-radius: 8px; padding: 24px; margin: 20px 0;">
+            <p style="color: #FFFFFF; font-weight: bold; margin: 8px 0;">Your Free Plan includes:</p>
+            <p style="color: #A1A1AA; margin: 8px 0;">&#8226; 3 viral idea generations per week</p>
+            <p style="color: #A1A1AA; margin: 8px 0;">&#8226; 1 video analysis per week</p>
+            <p style="color: #A1A1AA; margin: 8px 0;">&#8226; Multi-language support</p>
+        </div>
+        <p style="color: #A1A1AA; text-align: center;">Upgrade to Pro for unlimited access!</p>
+        <div style="text-align: center; margin-top: 30px;">
+            <p style="color: #71717A; font-size: 12px;">ViralIQ - AI-Powered YouTube Growth</p>
+        </div>
+    </div>
+    """
 
 # ============ AUTH HELPERS ============
 
@@ -166,6 +285,16 @@ async def signup(request: SignupRequest):
     await db.usage_limits.insert_one(usage_dict)
     
     token = create_access_token(user.id, user.email)
+    
+    # Send welcome email (non-blocking)
+    asyncio.create_task(
+        send_email_notification(
+            to_email=request.email,
+            subject="Welcome to ViralIQ!",
+            html_content=build_welcome_email(request.full_name)
+        )
+    )
+    
     return AuthResponse(access_token=token, user=user)
 
 @api_router.post("/auth/signin", response_model=AuthResponse)
@@ -220,7 +349,6 @@ async def check_and_update_usage(user_id: str, operation: str) -> bool:
     # Check if test mode is enabled for this user
     test_mode = await db.test_mode.find_one({"enabled": True}, {"_id": 0})
     if test_mode and user.get('email') == test_mode.get('email'):
-        # Test mode enabled for this email - bypass all restrictions
         return True
     
     # Check limits based on subscription tier
@@ -244,6 +372,26 @@ async def check_and_update_usage(user_id: str, operation: str) -> bool:
         )
     
     return True
+
+@api_router.get("/usage")
+async def get_usage(current_user: dict = Depends(get_current_user)):
+    usage = await db.usage_limits.find_one({"user_id": current_user['id']}, {"_id": 0})
+    tier = current_user.get('subscription_tier', 'free')
+    if not usage:
+        return {
+            "generations_this_week": 0,
+            "analyses_this_week": 0,
+            "tier": tier,
+            "generation_limit": 3 if tier == "free" else -1,
+            "analysis_limit": 1 if tier == "free" else -1
+        }
+    return {
+        "generations_this_week": usage.get('generations_this_week', 0),
+        "analyses_this_week": usage.get('analyses_this_week', 0),
+        "tier": tier,
+        "generation_limit": 3 if tier == "free" else -1,
+        "analysis_limit": 1 if tier == "free" else -1
+    }
 
 # ============ FEATURE ROUTES ============
 
@@ -269,25 +417,32 @@ For EACH idea, provide:
 1. Title (catchy, clickable)
 2. Hook (first 15 seconds script)
 3. Thumbnail concept (visual description)
-4. Viral score (1-10)
+4. Viral score (integer 1-10, must be a whole number)
 5. Best upload day
 6. Best upload time
 
-Format as JSON array with keys: title, hook, thumbnail_concept, viral_score, best_upload_day, best_upload_time"""
+IMPORTANT: viral_score MUST be an integer (whole number like 7 or 8, NOT 7.5).
+Format as JSON array with keys: title, hook, thumbnail_concept, viral_score, best_upload_day, best_upload_time
+Return ONLY the JSON array, no other text."""
     
     message = UserMessage(text=prompt)
     response = await chat.send_message(message)
     
-    import json
     try:
         response_text = response.strip()
         if response_text.startswith('```json'):
             response_text = response_text[7:]
+        if response_text.startswith('```'):
+            response_text = response_text[3:]
         if response_text.endswith('```'):
             response_text = response_text[:-3]
         response_text = response_text.strip()
         
         ideas_data = json.loads(response_text)
+        # Coerce viral_score to float (model accepts float now)
+        for idea in ideas_data:
+            idea['viral_score'] = float(idea.get('viral_score', 5))
+        
         ideas = [VideoIdea(**idea) for idea in ideas_data]
         
         # Store in database
@@ -318,27 +473,30 @@ async def analyze_video(request: AnalyzeVideoRequest, current_user: dict = Depen
     prompt = f"""Analyze this YouTube video: {request.video_url}
 
 Provide:
-1. Overall performance score (0-100)
+1. Overall performance score (integer 0-100)
 2. 3-5 specific reasons why it underperformed
 3. For each reason, provide an actionable fix
 4. Suggest an improved title
 5. Suggest a better thumbnail concept
 
-Format as JSON with keys: score, reasons (array of objects with 'reason' and 'fix'), improved_title, better_thumbnail"""
+Format as JSON with keys: score (integer), reasons (array of objects with 'reason' and 'fix'), improved_title, better_thumbnail
+Return ONLY the JSON object, no other text."""
     
     message = UserMessage(text=prompt)
     response = await chat.send_message(message)
     
-    import json
     try:
         response_text = response.strip()
         if response_text.startswith('```json'):
             response_text = response_text[7:]
+        if response_text.startswith('```'):
+            response_text = response_text[3:]
         if response_text.endswith('```'):
             response_text = response_text[:-3]
         response_text = response_text.strip()
         
         analysis_data = json.loads(response_text)
+        analysis_data['score'] = int(analysis_data.get('score', 50))
         analysis = VideoAnalysisResponse(**analysis_data)
         
         # Store in database
@@ -416,24 +574,90 @@ async def get_checkout_status(session_id: str, current_user: dict = Depends(get_
     if status.payment_status == "paid":
         transaction = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
         if transaction and transaction['payment_status'] != "completed":
-            # Update user subscription
             plan = transaction['plan']
             await db.users.update_one(
                 {"id": current_user['id']},
                 {"$set": {"subscription_tier": plan}}
             )
-            # Update transaction status
             await db.payment_transactions.update_one(
                 {"session_id": session_id},
                 {"$set": {"payment_status": "completed"}}
+            )
+            # Send payment success email
+            plan_info = PRICING_PLANS.get(plan, {"amount": 0})
+            asyncio.create_task(
+                send_email_notification(
+                    to_email=current_user['email'],
+                    subject=f"ViralIQ - {plan.title()} Plan Activated!",
+                    html_content=build_payment_success_email(
+                        current_user.get('full_name'),
+                        plan,
+                        plan_info['amount']
+                    )
+                )
             )
     
     return status
 
 @api_router.post("/webhook/stripe")
 async def stripe_webhook(stripe_signature: str = Header(None)):
-    # Webhook handling for Stripe events
     return {"status": "received"}
+
+# ============ SUBSCRIPTION CANCELLATION ============
+
+@api_router.post("/subscription/cancel")
+async def cancel_subscription(request: CancelSubscriptionRequest, current_user: dict = Depends(get_current_user)):
+    if not request.confirm:
+        raise HTTPException(status_code=400, detail="Please confirm cancellation")
+    
+    tier = current_user.get('subscription_tier', 'free')
+    if tier == 'free':
+        raise HTTPException(status_code=400, detail="You are already on the Free plan")
+    
+    # Downgrade to free
+    await db.users.update_one(
+        {"id": current_user['id']},
+        {"$set": {"subscription_tier": "free"}}
+    )
+    
+    # Reset usage limits
+    await db.usage_limits.update_one(
+        {"user_id": current_user['id']},
+        {"$set": {
+            "generations_this_week": 0,
+            "analyses_this_week": 0,
+            "week_start": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    # Record cancellation
+    await db.cancellations.insert_one({
+        "user_id": current_user['id'],
+        "email": current_user['email'],
+        "previous_plan": tier,
+        "cancelled_at": datetime.now(timezone.utc).isoformat()
+    })
+    
+    # Send cancellation email
+    asyncio.create_task(
+        send_email_notification(
+            to_email=current_user['email'],
+            subject="ViralIQ - Subscription Cancelled",
+            html_content=build_cancellation_email(current_user.get('full_name'), tier)
+        )
+    )
+    
+    return {"message": f"{tier.title()} subscription cancelled. You are now on the Free plan.", "new_tier": "free"}
+
+# ============ EMAIL NOTIFICATIONS ROUTES ============
+
+@api_router.get("/notifications")
+async def get_notifications(current_user: dict = Depends(get_current_user)):
+    notifications = await db.email_notifications.find(
+        {"to": current_user['email']},
+        {"_id": 0}
+    ).sort("created_at", -1).limit(20).to_list(20)
+    return {"notifications": notifications}
 
 # ============ ADMIN TESTING ============
 
@@ -443,11 +667,9 @@ class TestModeRequest(BaseModel):
 
 @api_router.post("/admin/test-mode")
 async def toggle_test_mode(request: TestModeRequest):
-    # Remove any existing test mode settings
     await db.test_mode.delete_many({})
     
     if request.enabled:
-        # Enable test mode for specific email
         await db.test_mode.insert_one({
             "enabled": True,
             "email": request.email,
